@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<h2>Your Cart</h2>
+
+{% for item in products %}
+<div class="cart-card">
+    <h3>{{ item.product.name }}</h3>
+
+    <p>
+        <a href="{% url 'update_cart' item.product.id 'decrease' %}" class="qty-btn">-</a>
+        {{ item.quantity }}
+        <a href="{% url 'update_cart' item.product.id 'increase' %}" class="qty-btn">+</a>
+    </p>
+
+    <p>Subtotal: ₹{{ item.subtotal }}</p>
+
+    <a href="{% url 'remove_from_cart' item.product.id %}" class="remove-btn">Remove</a>
+</div>
+{% endfor %}
+
+<h3>Total: ₹{{ total }}</h3>
+
+<a href="{% url 'checkout' %}" class="checkout-btn">Proceed to Checkout</a>
+
+{% endblock %}
