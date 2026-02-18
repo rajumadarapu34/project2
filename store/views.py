@@ -1,9 +1,12 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Product, Category
-
-# Product List
 from django.db.models import Q
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
 
+from .models import Product, Category, Order, OrderItem
+
+
+# -------------------- Product List --------------------
 def product_list(request):
     products = Product.objects.all()
     categories = Category.objects.all()
@@ -24,33 +27,31 @@ def product_list(request):
         'products': products,
         'categories': categories
     }
-
     return render(request, 'product_list.html', context)
 
 
-# Add to Cart (Session Based)
+# -------------------- Add to Cart --------------------
 def add_to_cart(request, product_id):
-    product = get_object_or_404(Product, id=product_id)
+    get_object_or_404(Product, id=product_id)
 
     cart = request.session.get('cart', {})
 
-    if str(product_id) in cart:
-        cart[str(product_id)] += 1
-    else:
-        cart[str(product_id)] = 1
+    cart[str(product_id)] = cart.get(str(product_id), 0) + 1
 
     request.session['cart'] = cart
+    request.session.modified = True
+
     return redirect('product_list')
 
 
-# View Cart
+# -------------------- View Cart --------------------
 def view_cart(request):
     cart = request.session.get('cart', {})
     products = []
     total = 0
 
     for product_id, quantity in cart.items():
-        product = Product.objects.get(id=product_id)
+        product = get_object_or_404(Product, id=product_id)
         subtotal = product.price * quantity
         total += subtotal
 
@@ -64,32 +65,41 @@ def view_cart(request):
         'products': products,
         'total': total
     })
+
+
+# -------------------- Remove from Cart --------------------
 def remove_from_cart(request, product_id):
     cart = request.session.get('cart', {})
 
     if str(product_id) in cart:
         del cart[str(product_id)]
+        request.session.modified = True
 
-    request.session['cart'] = cart
     return redirect('view_cart')
+
+
+# -------------------- Update Cart --------------------
 def update_cart(request, product_id, action):
     cart = request.session.get('cart', {})
 
     if str(product_id) in cart:
         if action == "increase":
             cart[str(product_id)] += 1
+
         elif action == "decrease":
             cart[str(product_id)] -= 1
 
             if cart[str(product_id)] <= 0:
                 del cart[str(product_id)]
 
-    request.session['cart'] = cart
-    return redirect('view_cart')
-from .models import Order, OrderItem
-from django.contrib.auth.decorators import login_required
+        request.session.modified = True
 
+    return redirect('view_cart')
+
+
+# -------------------- Checkout --------------------
 @login_required
+@transaction.atomic
 def checkout(request):
     cart = request.session.get('cart', {})
 
@@ -104,7 +114,12 @@ def checkout(request):
     total = 0
 
     for product_id, quantity in cart.items():
-        product = Product.objects.get(id=product_id)
+        product = get_object_or_404(Product, id=product_id)
+
+        # Optional: Prevent ordering more than stock
+        if product.stock < quantity:
+            return redirect('view_cart')
+
         subtotal = product.price * quantity
         total += subtotal
 
@@ -124,8 +139,12 @@ def checkout(request):
 
     # Clear cart
     request.session['cart'] = {}
+    request.session.modified = True
 
     return render(request, 'order_success.html', {'order': order})
+
+
+# -------------------- Order History --------------------
 @login_required
 def order_history(request):
     orders = Order.objects.filter(user=request.user).order_by('-created_at')
